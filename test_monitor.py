@@ -201,6 +201,24 @@ class MonitorTests(unittest.TestCase):
             finally:
                 server.shutdown()
 
+    def test_dashboard_handles_client_disconnects_but_not_other_write_errors(self):
+        with DashboardServer(("127.0.0.1", 0), Dashboard) as server:
+            server.page = b"dashboard"
+            request = f"GET / HTTP/1.1\r\nHost: 127.0.0.1:{server.server_port}\r\n\r\n".encode("ascii")
+
+            def interrupt_body(error):
+                client = Mock()
+                client.makefile.return_value = BytesIO(request)
+                client.sendall.side_effect = [None, error]  # Headers succeed, body write fails.
+                Dashboard(client, ("127.0.0.1", 12345), server)
+
+            for error in (ct.WinError(10053), ConnectionResetError(), BrokenPipeError()):
+                with self.subTest(error=type(error).__name__), patch.object(Dashboard, "log_message") as log:
+                    interrupt_body(error)
+                    log.assert_called_once()
+            with self.assertRaisesRegex(OSError, "unexpected write failure"):
+                interrupt_body(OSError("unexpected write failure"))
+
     def test_interval_changes_reschedule_a_sleeping_worker_from_the_last_start(self):
         journal = self.journal
         self.assertEqual(journal.snapshot()["speed"]["interval_seconds"], 10)

@@ -221,6 +221,12 @@ class DashboardServer(ThreadingHTTPServer):
 
 
 class Dashboard(BaseHTTPRequestHandler):
+    def handle(self) -> None:
+        try:
+            super().handle()
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError) as exc:
+            self.log_message("Dashboard connection closed before the request completed: %s", exc)
+
     def valid_host(self) -> bool:
         port = self.server.server_port
         if self.headers.get("Host") not in (f"127.0.0.1:{port}", f"localhost:{port}"):

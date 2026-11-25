@@ -12,6 +12,8 @@ python .\monitor.py
 
 Open **<http://127.0.0.1:8765/>** for the live status and all recorded disruptions. Keep the terminal running; the dashboard tab can be closed. On each new disconnect, the monitor requests a new tab in your default browser and the page displays a dismissible alert. The browser controls whether it uses a tab or a window. The page works without Wi-Fi and refreshes every two seconds.
 
+If a dashboard request is canceled, for example when a tab closes mid-refresh, the monitor may log `Dashboard connection closed before the request completed`. This concerns only that HTTP request; it is not a Wi-Fi outage and does not stop monitoring.
+
 Press **Ctrl+C** to stop. Run the same command later to resume. Nothing is scheduled to run at sign-in.
 
 ## What gets recorded
