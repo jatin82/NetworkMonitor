@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>Wi-Fi monitor</title>
+  <style>
+    :root { color-scheme: light; font: 16px/1.5 system-ui, sans-serif; color: #172e34; background: #f4f7f6; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    header { background: #17393b; color: #fff; }
+    .bar, main { width: min(100% - 2rem, 960px); margin: auto; }
+    .bar { display: flex; align-items: center; gap: .7rem; min-height: 3.5rem; }
+    .bar small { margin-left: auto; color: #c7dfda; }
+    svg { width: 24px; height: 24px; }
+    main { padding: 3rem 0; }
+    h1, h2, p { margin: 0; }
+    h1 { font-size: clamp(2rem, 6vw, 3rem); letter-spacing: -.05em; line-height: 1.1; }
+    h2 { font-size: 1.3rem; letter-spacing: -.025em; }
+    .intro, .muted, .empty, footer { color: #52676a; }
+    .intro { margin: .65rem 0 1.8rem; }
+    .summary { display: grid; grid-template-columns: 1.25fr 1.25fr 1fr; gap: 1rem; margin-bottom: 1.6rem; }
+    .card, .history, dialog { background: white; border: 1px solid #cfdbd8; border-radius: 12px; }
+    .card { padding: 1.3rem 1.5rem; }
+    .label { color: #53686c; font-size: .73rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+    .value { margin: .25rem 0; font-size: 1.6rem; font-weight: 650; }
+    #state::before { content: ""; display: inline-block; width: .65rem; height: .65rem; border-radius: 50%; margin-right: .55rem; background: #748488; vertical-align: .15em; }
+    #state[data-state="connected"]::before { background: #13805d; }
+    #state[data-state="disconnected"]::before, #state[data-state="no-adapter"]::before { background: #bf5425; }
+    .heading { padding: 1.4rem 1.5rem 1rem; }
+    .toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .6rem 1rem; }
+    .preferences { margin: -1rem 0 1.4rem; font-size: .9rem; }
+    .preferences input { accent-color: #206249; vertical-align: middle; }
+    #settings-error { color: #8b3b15; }
+    select { font: inherit; color: inherit; background: white; border: 1px solid #afbfbc; border-radius: 6px; padding: .3rem; }
+    #speed-chart { display: block; width: 100%; height: 194px; }
+    #speed-chart text { font: 12px system-ui, sans-serif; fill: #52676a; }
+    #chart-summary { padding: .5rem 1.5rem 1rem; font-size: .86rem; }
+    .scroll { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: .92rem; }
+    th, td { text-align: left; padding: .85rem 1.15rem; white-space: nowrap; border-top: 1px solid #e0e8e5; }
+    th { background: #f6f9f8; color: #4e6568; font-size: .8rem; }
+    .badge { display: inline-block; padding: .15rem .6rem; border-radius: 5px; background: #e9efed; color: #415458; font-weight: 600; font-size: .8rem; }
+    .restored { background: #e0f2e9; color: #206249; }
+    .ongoing { background: #ffeadc; color: #8b3b15; }
+    .history + .history { margin-top: 1.6rem; }
+    #speed[data-low="true"] { color: #8b3b15; }
+    .empty { text-align: center; padding: 2.5rem 1rem; }
+    footer { padding-top: 1rem; font-size: .8rem; }
+    dialog { width: min(27rem, 90vw); padding: 1.6rem; color: inherit; border-top: 4px solid #b74f21; }
+    dialog::backdrop { background: #10262ab3; }
+    dialog h2 { margin: .35rem 0 .6rem; }
+    dialog button { margin-top: 1.25rem; background: #17393b; color: white; border: 0; border-radius: 6px; font: inherit; padding: .5rem 1rem; cursor: pointer; }
+    @media (max-width: 580px) { main { padding: 1.8rem 0; } .summary { grid-template-columns: 1fr; gap: .65rem; } .card { padding: 1rem; } }
+  </style>
+</head>
+<body>
+  <header><div class="bar">
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <path d="M2 8a16 16 0 0 1 20 0M5.5 12a10.5 10.5 0 0 1 13 0M9 16a5 5 0 0 1 6 0"/><circle cx="12" cy="20" r="1" fill="currentColor"/>
+    </svg><strong>Network Monitor</strong><small>Local dashboard</small>
+  </div></header>
+  <main>
+    <h1>Wi-Fi monitor</h1>
+    <p class="intro">Wi-Fi connectivity, internet download speed, and alert history for this PC.</p>
+    <section class="summary" aria-label="Connection overview">
+      <div class="card"><p class="label">Wi-Fi link</p>
+        <p class="value" id="state" role="status">Checking</p><p id="detail" class="muted">Waiting for the monitor.</p></div>
+      <div class="card"><p class="label">Internet download</p>
+        <p class="value" id="speed">&ndash;</p><p id="speed-detail" class="muted">Waiting for a test.</p></div>
+      <div class="card"><p class="label">Disruptions</p>
+        <p class="value" id="count">&ndash;</p><p class="muted">Across all sessions</p></div>
+    </section>
+    <div class="preferences">
+      <div class="toolbar">
+        <div><label><input type="checkbox" id="alerts-enabled" disabled> Open alert tabs for disconnects and slow speeds</label>
+          <p class="muted">Turning this off keeps monitoring and logging active.</p></div>
+        <div><label>Speed test interval <select id="test-interval" disabled></select></label>
+          <p class="muted">Each test downloads up to 512 KiB.</p></div>
+      </div>
+      <p id="settings-error" role="status"></p>
+    </div>
+    <section class="history" aria-labelledby="chart-title">
+      <div class="heading">
+        <div class="toolbar"><h2 id="chart-title">Download speed over time</h2>
+          <label>Timeframe <select id="chart-range">
+            <option value="15">Last 15 minutes</option><option value="60" selected>Last hour</option>
+            <option value="360">Last 6 hours</option><option value="1440">Last 24 hours</option>
+          </select></label>
+        </div>
+        <p class="muted" id="chart-key">Download speed (Mbps) &middot; Local time</p>
+      </div>
+      <svg id="speed-chart" role="img" aria-labelledby="chart-title" aria-describedby="chart-key chart-summary"></svg>
+      <p class="muted" id="chart-summary">Loading speed history&hellip;</p>
+    </section>
+    <section class="history" aria-labelledby="history-title">
+      <div class="heading"><h2 id="history-title">Disruption history</h2>
+        <p class="muted">Newest first &middot; Times shown in your local time zone</p></div>
+      <div class="scroll"><table>
+        <thead><tr><th>Disconnected</th><th>Reconnected</th><th>Duration</th><th>Status</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table></div>
+      <p id="empty" class="empty">Loading history&hellip;</p>
+    </section>
+    <section class="history" aria-labelledby="speed-title">
+      <div class="heading"><h2 id="speed-title">Low-speed alerts</h2>
+        <p id="speed-rule" class="muted">One alert per slow period.</p></div>
+      <div class="scroll"><table>
+        <thead><tr><th>Detected</th><th>Measured download</th></tr></thead>
+        <tbody id="speed-rows"></tbody>
+      </table></div>
+      <p id="speed-empty" class="empty">Loading history&hellip;</p>
+    </section>
+    <footer>Stored locally on this PC. No internet connection is needed to view this page.</footer>
+  </main>
+  <dialog id="alert-dialog" role="alertdialog" aria-labelledby="alert-title" aria-describedby="alert-message">
+    <p class="label">Connection alert</p><h2 id="alert-title">Wi-Fi disconnected</h2>
+    <p id="alert-message"></p>
+    <form method="dialog"><button autofocus>View history</button></form>
+  </dialog>
+  <script>
+    const byId = id => document.getElementById(id);
+    const fragment = new URLSearchParams(location.hash.slice(1));
+    const alertId = fragment.get("alert"), speedId = fragment.get("speed");
+    const labels = {starting: "Checking", connected: "Connected", disconnected: "Disconnected",
+                    "no-adapter": "No Wi-Fi adapter", unavailable: "Monitor unavailable"};
+    const descriptions = {starting: "Waiting for Windows.", connected: "Associated with a Wi-Fi access point.",
+      disconnected: "Not associated with a Wi-Fi access point.", "no-adapter": "Waiting for a wireless adapter."};
+    const outcomes = {ongoing: "Ongoing", restored: "Restored", interrupted: "End not observed"};
+    let alerted = false;
+    let savingSetting = false, settingVersion = 0, savedInterval;
+    const alertsBox = byId("alerts-enabled"), intervalSelect = byId("test-interval");
+    async function saveSetting(endpoint, payload, onFailure) {
+      savingSetting = alertsBox.disabled = intervalSelect.disabled = true;
+      settingVersion++;
+      byId("settings-error").textContent = "";
+      try {
+        const response = await fetch(endpoint, {method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(payload)});
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        savedInterval = intervalSelect.value;
+      } catch (error) {
+        onFailure();
+        byId("settings-error").textContent = `Could not confirm the setting (${error.message}).`;
+      } finally {
+        settingVersion++;
+        savingSetting = alertsBox.disabled = intervalSelect.disabled = false;
+      }
+    }
+    alertsBox.addEventListener("change", () => {
+      const enabled = alertsBox.checked;
+      saveSetting("/api/alerts", {alerts_enabled: enabled}, () => { alertsBox.checked = !enabled; });
+    });
+    intervalSelect.addEventListener("change", () => {
+      saveSetting("/api/interval", {interval_seconds: Number(intervalSelect.value)}, () => {
+        intervalSelect.value = savedInterval;
+      });
+    });
+
+    function duration(seconds) {
+      if (seconds === null) return "Unknown";
+      if (seconds < 1) return `${Math.round(seconds * 1000)} ms`;
+      const s = Math.floor(seconds);
+      return [s >= 3600 ? `${Math.floor(s / 3600)}h` : "", s >= 60 ? `${Math.floor(s / 60) % 60}m` : "",
+              `${s % 60}s`].filter(Boolean).join(" ");
+    }
+    function localTime(value) { return new Date(value).toLocaleString(); }
+
+    const chart = byId("speed-chart"), range = byId("chart-range");
+    let chartData = null, chartVersion = 0, chartRequestedAt = -Infinity, chartCheckedAt;
+    function drawChart() {
+      if (!chartData) return;
+      const {start_ms: start, end_ms: end, samples, threshold_mbps: threshold} = chartData;
+      const width = Math.max(185, chart.clientWidth), left = 44, right = width - 18, top = 10, bottom = 163;
+      const valid = samples.filter(p => p.mbps !== null);
+      const rates = valid.map(p => p.mbps);
+      const peak = Math.max(threshold * 1.1, ...rates);
+      const step = 10 ** Math.floor(Math.log10(peak)) / 2;
+      const ceiling = Math.ceil(peak / step) * step;
+      const x = at => left + (at - start) / (end - start) * (right - left);
+      const y = rate => bottom - rate / ceiling * (bottom - top);
+      const layer = document.createDocumentFragment();
+      function add(tag, attributes, text) {
+        const element = document.createElementNS("http://www.w3.org/2000/svg", tag);
+        for (const [name, value] of Object.entries(attributes)) element.setAttribute(name, value);
+        if (text !== undefined) element.textContent = text;
+        layer.append(element);
+      }
+      chart.setAttribute("viewBox", `0 0 ${width} 194`);
+      for (let i = 0; i <= 4; i++) {
+        const rate = ceiling * i / 4, yy = y(rate);
+        add("line", {x1: left, x2: right, y1: yy, y2: yy, stroke: "#dce6e2"});
+        add("text", {x: left - 6, y: yy + 4, "text-anchor": "end"}, Number(rate.toFixed(2)));
+      }
+      const ticks = width < 480 ? 2 : 4;
+      for (let i = 0; i <= ticks; i++) {
+        const at = start + (end - start) * i / ticks;
+        add("text", {x: x(at), y: bottom + 22, "text-anchor": i === 0 ? "start" : i === ticks ? "end" : "middle"},
+          new Date(at).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"}));
+      }
+      add("line", {x1: left, x2: right, y1: y(threshold), y2: y(threshold), stroke: "#b55321", "stroke-dasharray": "5 4"});
+      let line = "", dots = "", previous = null;
+      for (const p of samples) {
+        if (p.mbps === null) { previous = null; continue; }
+        const xy = `${x(p.at).toFixed(2)} ${y(p.mbps).toFixed(2)}`;
+        const join = !p.new_segment && previous !== null && p.at - previous <= p.interval_seconds * 1500;
+        line += (join ? "L" : "M") + xy;
+        dots += `M${xy}h0`;
+        previous = p.at;
+      }
+      add("path", {d: line, fill: "none", stroke: "#127657", "stroke-width": 1.7});
+      add("path", {d: dots, fill: "none", stroke: "#127657", "stroke-width": 3.5, "stroke-linecap": "round"});
+      chart.replaceChildren(layer);
+      byId("chart-key").textContent = `Download speed (Mbps) \u00b7 Dashed line: ${threshold} Mbps threshold`;
+      const summary = rates.length ? `${rates.length} ${rates.length === 1 ? "reading" : "readings"}, ` +
+        `${Math.min(...rates).toFixed(2)} to ${Math.max(...rates).toFixed(2)} Mbps.` : "No speed readings in this timeframe.";
+      byId("chart-summary").textContent = `${summary} ${localTime(start)} \u2013 ${localTime(end)} (local time).`;
+    }
+    async function loadChart() {
+      chartRequestedAt = performance.now();
+      const version = ++chartVersion;
+      try {
+        const response = await fetch(`/api/speed-history?minutes=${range.value}`, {cache: "no-store"});
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        if (version !== chartVersion) return;
+        chartData = data;
+        drawChart();
+      } catch (error) {
+        if (version !== chartVersion) return;
+        chartData = null;
+        chart.replaceChildren();
+        byId("chart-summary").textContent = `Cannot load speed history (${error.message}).`;
+      }
+    }
+    range.addEventListener("change", loadChart);
+    new ResizeObserver(drawChart).observe(chart);
+
+    function showAlert(title, message) {
+      if (alerted && !byId("alert-dialog").open) return;
+      byId("alert-title").textContent = title;
+      byId("alert-message").textContent = message;
+      if (!alerted) {
+        byId("alert-dialog").showModal();
+        history.replaceState(null, "", location.pathname);
+        alerted = true;
+      }
+    }
+
+    function renderSpeed(speed, connected) {
+      const threshold = speed.threshold_mbps, rate = speed.download_mbps;
+      if (chartCheckedAt !== speed.checked_at || performance.now() - chartRequestedAt >= speed.interval_seconds * 1000) {
+        chartCheckedAt = speed.checked_at;
+        loadChart();
+      }
+      const format = n => (n < threshold && Number(n.toFixed(2)) >= threshold
+        ? `<${threshold}` : n.toFixed(2)) + " Mbps";
+      byId("speed").textContent = !connected ? "Paused" : rate !== null ? format(rate) :
+        speed.error ? "Unavailable" : "Waiting";
+      byId("speed").dataset.low = connected && rate !== null && rate < threshold;
+      byId("speed-detail").textContent = !connected ? "Runs while Wi-Fi is connected." :
+        [speed.error, speed.checked_at ? `Last test: ${localTime(speed.checked_at)}` : "Waiting for the first result."].filter(Boolean).join(" ");
+      byId("speed-rule").textContent = `Tested every ${speed.interval_seconds}s while connected. Alerts below ${threshold} Mbps.`;
+      const rows = document.createDocumentFragment();
+      for (const event of speed.alerts) {
+        const row = document.createElement("tr");
+        const when = localTime(event.checked_at), measured = format(event.download_mbps);
+        row.insertCell().textContent = when;
+        row.insertCell().textContent = measured;
+        rows.append(row);
+        if (event.id === speedId) showAlert("Slow internet download",
+          `The download test at ${when} measured ${measured}, below the ${threshold} Mbps minimum.`);
+      }
+      byId("speed-rows").replaceChildren(rows);
+      byId("speed-empty").hidden = speed.alerts.length > 0;
+      byId("speed-empty").textContent = "No low-speed alerts recorded.";
+    }
+
+    function render(data, version) {
+      if (!savingSetting && version === settingVersion) {
+        if (!intervalSelect.options.length) {
+          for (const seconds of data.speed.interval_options) intervalSelect.add(new Option(`${seconds} seconds`, seconds));
+        }
+        savedInterval = intervalSelect.value = String(data.speed.interval_seconds);
+        alertsBox.checked = data.alerts_enabled;
+        alertsBox.disabled = intervalSelect.disabled = false;
+      }
+      byId("state").textContent = labels[data.state];
+      byId("state").dataset.state = data.state;
+      byId("detail").textContent = data.error || descriptions[data.state];
+      renderSpeed(data.speed, data.state === "connected");
+      byId("count").textContent = data.disruptions.length;
+      byId("empty").hidden = data.disruptions.length > 0;
+      byId("empty").textContent = "No disruptions recorded.";
+      const rows = document.createDocumentFragment();
+      for (const event of data.disruptions) {
+        const row = document.createElement("tr");
+        const elapsed = event.status === "ongoing" ? data.elapsed_seconds : event.duration_seconds;
+        const partial = event.status === "interrupted" && elapsed !== null;
+        for (const value of [localTime(event.disconnected_at),
+          event.reconnected_at ? localTime(event.reconnected_at) : "\u2014",
+          (partial ? "\u2265 " : "") + duration(elapsed)]) row.insertCell().textContent = value;
+        const badge = document.createElement("span");
+        badge.className = `badge ${event.status}`;
+        badge.textContent = outcomes[event.status];
+        row.insertCell().append(badge);
+        rows.append(row);
+        if (event.id === alertId) {
+          showAlert("Wi-Fi disconnected", `The Wi-Fi link dropped at ${localTime(event.disconnected_at)}. ` +
+            (event.status === "restored" ? `It reconnected after ${duration(elapsed)}.` :
+             event.status === "ongoing" ? "The disruption is ongoing." : "The recovery time was not observed."));
+        }
+      }
+      byId("rows").replaceChildren(rows);
+    }
+    async function refresh() {
+      const version = settingVersion;
+      try {
+        const response = await fetch("/api/status", {cache: "no-store"});
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        render(await response.json(), version);
+      } catch (error) {
+        byId("state").textContent = "Dashboard offline";
+        byId("state").dataset.state = "unavailable";
+        byId("detail").textContent = `Cannot refresh (${error.message}). Check that the monitor is running.`;
+        byId("speed").textContent = "Unavailable";
+        byId("speed").dataset.low = false;
+        byId("speed-detail").textContent = "Cannot reach the local monitor.";
+        alertsBox.disabled = intervalSelect.disabled = true;
+        if (byId("count").textContent === "\u2013") {
+          byId("empty").textContent = byId("speed-empty").textContent = "History unavailable.";
+          byId("chart-summary").textContent = "Speed history unavailable.";
+        }
+      } finally {
+        setTimeout(refresh, 2000);
+      }
+    }
+    refresh();
+  </script>
+</body>
+</html>
